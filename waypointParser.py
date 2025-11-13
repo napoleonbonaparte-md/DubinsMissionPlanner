@@ -1,16 +1,6 @@
 from dubins import DubinsIterator
-class Waypoint:
-    def __init__(self, num, is_Active=0, relativity=3, type=16, params=[0,0,0,0], lat=0.0, long=0.0, alt=0.0, unknown=1):
-        self.num = num
-        self.is_Active = is_Active
-        self.relativity = relativity
-        self.type = type
-        self.params = params
-        self.lat = lat
-        self.long = long
-        self.alt = alt
-        self.unknown = unknown
-    
+from heading_calc import Waypoint
+
 class waypointParser():
     def __init__(self):
         self.waypoints = [] 
@@ -31,6 +21,7 @@ class waypointParser():
                 unknown = int(data[11])
                 waypoint = Waypoint(num, is_Active, relativity, type, params, lat, long, alt, unknown)
                 self.waypoints.append(waypoint) 
+
 
 def main():
     parser = waypointParser()
