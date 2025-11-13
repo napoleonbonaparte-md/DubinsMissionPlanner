@@ -1,0 +1,61 @@
+import ctypes
+import os
+import numpy as np
+
+class PathPoint(ctypes.Structure):
+    _fields_ = [
+        ("x", ctypes.c_float),
+        ("y", ctypes.c_float),
+        ("theta", ctypes.c_float),
+        ("t", ctypes.c_float),
+        ("valid", ctypes.c_bool)
+    ]
+
+class DubinsIterator:
+    def __init__(self, start, goal, turning_radius, step_size=1.0):
+        lib_path = os.path.join(os.path.dirname(__file__), "libdubins.so")
+        self.lib = ctypes.CDLL(lib_path)
+        # Constructor: DubinsIterator(float start[3], float goal[3], float turning_radius, float step_size)
+        self.lib.create_dubins_iterator.restype = ctypes.c_void_p
+        self.lib.create_dubins_iterator.argtypes = [ctypes.POINTER(ctypes.c_float), ctypes.POINTER(ctypes.c_float), ctypes.c_float, ctypes.c_float]
+        start_arr = (ctypes.c_float * 3)(*start)
+        goal_arr = (ctypes.c_float * 3)(*goal)
+        self.obj = self.lib.create_dubins_iterator(start_arr, goal_arr, ctypes.c_float(turning_radius), ctypes.c_float(step_size))
+        # getNextPoint
+        self.lib.dubins_iterator_get_next_point.restype = PathPoint
+        self.lib.dubins_iterator_get_next_point.argtypes = [ctypes.c_void_p]
+        # hasNext
+        self.lib.dubins_iterator_has_next.restype = ctypes.c_bool
+        self.lib.dubins_iterator_has_next.argtypes = [ctypes.c_void_p]
+        # reset
+        self.lib.dubins_iterator_reset.argtypes = [ctypes.c_void_p]
+
+    def get_next_point(self):
+        return self.lib.dubins_iterator_get_next_point(self.obj)
+
+    def has_next(self):
+        return self.lib.dubins_iterator_has_next(self.obj)
+
+    def reset(self):
+        self.lib.dubins_iterator_reset(self.obj)
+
+    def __del__(self):
+        if hasattr(self, 'obj'):
+            self.lib.destroy_dubins_iterator(self.obj)
+
+def main():
+    # Example arguments; replace with actual required parameters
+    start = (0, 0, 0)  # (x, y, heading)
+    end = (10, 10, 1.57)  # (x, y, heading)
+    turning_radius = 1.0
+    step_size = 0.1
+
+    dubins_iterator = DubinsIterator(start, end, turning_radius, step_size)
+
+    while dubins_iterator.has_next():
+        point = dubins_iterator.get_next_point()
+        if point.valid:
+            print(f"x={point.x:.2f}, y={point.y:.2f}, theta={point.theta:.2f}, t={point.t:.2f}")
+
+if __name__ == "__main__":
+    main()
