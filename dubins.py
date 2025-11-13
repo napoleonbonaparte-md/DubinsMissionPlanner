@@ -29,7 +29,19 @@ class DubinsIterator:
         self.lib.dubins_iterator_has_next.argtypes = [ctypes.c_void_p]
         # reset
         self.lib.dubins_iterator_reset.argtypes = [ctypes.c_void_p]
-
+        # getAllPoints
+        self.lib.dubins_iterator_get_all_points.restype = ctypes.POINTER(PathPoint)
+        self.lib.dubins_iterator_get_all_points.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.c_int)]
+        # getSegmentPoints
+        self.lib.dubins_iterator_get_segment_points.restype = ctypes.POINTER(PathPoint)
+        self.lib.dubins_iterator_get_segment_points.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.c_int)]
+    def get_all_points(self):
+        count = ctypes.c_int()
+        ptr = self.lib.dubins_iterator_get_all_points(self.obj, ctypes.byref(count))
+        if not ptr or count.value == 0:
+            return []
+        # Create a Python list from the C array
+        return [ptr[i] for i in range(count.value)]
     def get_next_point(self):
         return self.lib.dubins_iterator_get_next_point(self.obj)
 
@@ -38,6 +50,13 @@ class DubinsIterator:
 
     def reset(self):
         self.lib.dubins_iterator_reset(self.obj)
+
+    def get_segment_points(self):
+        count = ctypes.c_int()
+        ptr = self.lib.dubins_iterator_get_segment_points(self.obj, ctypes.byref(count))
+        if not ptr or count.value == 0:
+            return []
+        return [ptr[i] for i in range(count.value)]
 
     def __del__(self):
         if hasattr(self, 'obj'):

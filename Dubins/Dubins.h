@@ -177,7 +177,12 @@ int dubins_extract_subpath(DubinsPath* path, float t, DubinsPath* newpath);
 std::vector<PathPoint> collect_dubins_path(float q0[3], float q1[3], 
                                          float rho,  float step_size);
 
-
+/*
+    Function to collect Dubins path segment points to a vector.
+    Will do it in a more efficient way than collect_dubins_path.
+*/
+std::vector<PathPoint> collect_dubins_segment_dots(float q0[3], float q1[3], 
+                                         float rho, float step_size);
 
 void dubins_segment( float t, float qi[3], float qt[3], SegmentType type);
 

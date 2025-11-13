@@ -101,4 +101,21 @@ void DubinsIterator::reset() {
     current_t = 0.0;
 }
 
+std::vector<PathPoint> DubinsIterator::getAllPoints() {
+    std::vector<PathPoint> points;
+    reset();
+    while (hasNext()) {
+        points.push_back(getNextPoint());
+    }
+    return points;
+}
 
+std::vector<PathPoint> DubinsIterator::getSegmentPoints() {
+    std::vector<PathPoint> points;
+    // Use the new collect_dubins_segment_dots logic
+    std::vector<PathPoint> seg_points = collect_dubins_segment_dots(start_, goal_, turning_radius_, step);
+    for (const auto& pt : seg_points) {
+        points.push_back(pt);
+    }
+    return points;
+}

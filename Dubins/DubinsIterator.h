@@ -10,7 +10,8 @@ public:
     DubinsIterator(const DubinsIterator& other);
     // Assignment operator
     DubinsIterator& operator=(const DubinsIterator& other);
-
+    std::vector<PathPoint> getAllPoints();
+    std::vector<PathPoint> getSegmentPoints();
     PathPoint getNextPoint();
     bool hasNext() const;
     void reset();

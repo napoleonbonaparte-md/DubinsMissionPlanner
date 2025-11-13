@@ -4,7 +4,7 @@
 
         {
             "name": "Run waypointParser.py (venv)",
-            "type": "python",
+            "type": "debugpy",
             "request": "launch",
             "program": "${workspaceFolder}/waypointParser.py",
             "console": "integratedTerminal",

@@ -16,9 +16,48 @@ const SegmentType DIRDATA[][3] = {
     { R_SEG, L_SEG, R_SEG },
     { L_SEG, R_SEG, L_SEG }
 };
+std::vector<PathPoint> collect_dubins_segment_dots(float q0[3], float q1[3], 
+                                         float rho, float step_size) {
+        std::vector<PathPoint> points;
+    DubinsPath path;
+    if (dubins_shortest_path(&path, q0, q1, rho) != EDUBOK) {
+        return points;
+    }
+    const SegmentType* types = DIRDATA[path.type];
+    float seg_lengths[3] = { path.param[0] * rho, path.param[1] * rho, path.param[2] * rho };
+    float qi[3] = { path.qi[0], path.qi[1], path.qi[2] };
+    float t_global = 0.0;
+    for (int i = 0; i < 3; ++i) {
+        SegmentType type = types[i];
+        float seg_length = seg_lengths[i];
+        float t = 0.0;
+        float q[3];
+        if (type == S_SEG) {
+            // First point
+            dubins_segment(0.0, qi, q, type);
+            points.push_back({q[0] * rho + qi[0], q[1] * rho + qi[1], q[2], t_global, true});
+            // Last point
+            dubins_segment(seg_length / rho, qi, q, type);
+            points.push_back({q[0] * rho + qi[0], q[1] * rho + qi[1], q[2], t_global + seg_length, true});
+        } else {
+            while (t <= seg_length / rho) {
+                dubins_segment(t, qi, q, type);
+                points.push_back({q[0] * rho + qi[0], q[1] * rho + qi[1], q[2], t_global + t * rho, true});
+                t += step_size / rho;
+            }
+            // Ensure last point is included
+            if ((t - step_size / rho) * rho < seg_length) {
+                dubins_segment(seg_length / rho, qi, q, type);
+                points.push_back({q[0] * rho + qi[0], q[1] * rho + qi[1], q[2], t_global + seg_length, true});
+            }
+        }
+        // Update qi for next segment
+        dubins_segment(seg_length / rho, qi, qi, type);
+        t_global += seg_length;
+    }
+    return points;
 
-
-
+}
 std::vector<PathPoint> collect_dubins_path(float q0[3], float q1[3], 
                                          float rho, float step_size) {
     std::vector<PathPoint> path_points;
