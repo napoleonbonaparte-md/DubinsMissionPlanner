@@ -16,48 +16,46 @@ const SegmentType DIRDATA[][3] = {
     { R_SEG, L_SEG, R_SEG },
     { L_SEG, R_SEG, L_SEG }
 };
-std::vector<PathPoint> collect_dubins_segment_dots(float q0[3], float q1[3], 
-                                         float rho, float step_size) {
-        std::vector<PathPoint> points;
+std::vector<PathPoint> collect_dubins_segment_dots(float q0[3], float q1[3], float rho, float step_size) {
+    std::vector<PathPoint> points;
     DubinsPath path;
     if (dubins_shortest_path(&path, q0, q1, rho) != EDUBOK) {
         return points;
     }
     const SegmentType* types = DIRDATA[path.type];
     float seg_lengths[3] = { path.param[0] * rho, path.param[1] * rho, path.param[2] * rho };
-    float qi[3] = { path.qi[0], path.qi[1], path.qi[2] };
     float t_global = 0.0;
     for (int i = 0; i < 3; ++i) {
         SegmentType type = types[i];
         float seg_length = seg_lengths[i];
-        float t = 0.0;
-        float q[3];
+        float t_start = t_global;
+        float t_end = t_global + seg_length;
         if (type == S_SEG) {
-            // First point
-            dubins_segment(0.0, qi, q, type);
-            points.push_back({q[0] * rho + qi[0], q[1] * rho + qi[1], q[2], t_global, true});
-            // Last point
-            dubins_segment(seg_length / rho, qi, q, type);
-            points.push_back({q[0] * rho + qi[0], q[1] * rho + qi[1], q[2], t_global + seg_length, true});
+            // Only first and last point
+            float q_first[3], q_last[3];
+            if (dubins_path_sample(&path, t_start, q_first) == EDUBOK)
+                points.push_back({q_first[0], q_first[1], q_first[2], t_start, true});
+            if (dubins_path_sample(&path, t_end, q_last) == EDUBOK)
+                points.push_back({q_last[0], q_last[1], q_last[2], t_end, true});
         } else {
-            while (t <= seg_length / rho) {
-                dubins_segment(t, qi, q, type);
-                points.push_back({q[0] * rho + qi[0], q[1] * rho + qi[1], q[2], t_global + t * rho, true});
-                t += step_size / rho;
+            // All points in turn
+            float t = t_start;
+            while (t < t_end) {
+                float q[3];
+                if (dubins_path_sample(&path, t, q) == EDUBOK)
+                    points.push_back({q[0], q[1], q[2], t, true});
+                t += step_size;
             }
             // Ensure last point is included
-            if ((t - step_size / rho) * rho < seg_length) {
-                dubins_segment(seg_length / rho, qi, q, type);
-                points.push_back({q[0] * rho + qi[0], q[1] * rho + qi[1], q[2], t_global + seg_length, true});
-            }
+            float q_last[3];
+            if (dubins_path_sample(&path, t_end, q_last) == EDUBOK)
+                points.push_back({q_last[0], q_last[1], q_last[2], t_end, true});
         }
-        // Update qi for next segment
-        dubins_segment(seg_length / rho, qi, qi, type);
         t_global += seg_length;
     }
     return points;
-
 }
+
 std::vector<PathPoint> collect_dubins_path(float q0[3], float q1[3], 
                                          float rho, float step_size) {
     std::vector<PathPoint> path_points;

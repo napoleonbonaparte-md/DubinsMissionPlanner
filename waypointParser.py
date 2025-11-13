@@ -50,8 +50,8 @@ def xy_to_latlon(x, y, ref_lat, ref_lon):
 
 def build_intermeddiate_dubins_path(start, end, turning_radius, step_size, ref_lat, ref_lon):
         dubins_iterator = DubinsIterator(start, end, turning_radius, step_size)
-        points = dubins_iterator.get_all_points()
-        twenty_point_trial = math.floor(len(points) / 50 )
+        points = dubins_iterator.get_segment_points()
+        twenty_point_trial = math.floor(len(points) /  10)
         idx = 0
         intermeddiate_points = []
         while idx < len(points):
