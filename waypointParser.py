@@ -88,13 +88,26 @@ def build_dubins_path(parser: waypointParser, turning_radius: float, step_size: 
             idx += 1
     write_filename = "dubins_output.waypoints"
     parser.write_waypoints(write_filename)
-    
+
+def constrain_float(value: float, min_value: float, max_value: float) -> float:
+    return max(min_value, min(value, max_value))
+
+def calc_turn_radius(airspeed_ms: float, bank_angle_rad: float) -> float:
+    g = 9.80665
+    # avoid tan(0) and crazy bank angles
+    min_bank = math.radians(5.0)
+    max_bank = math.radians(80.0)
+
+    bank_angle_rad = constrain_float(bank_angle_rad, min_bank, max_bank)
+
+    return (airspeed_ms * airspeed_ms) / (g * math.tan(bank_angle_rad))
+
 def main():
     parser = waypointParser()
     parser.parse_waypoints()
     print(f"First waypoint lat: {parser.waypoints[0].lat}, long: {parser.waypoints[0].long}")
-    # Example arguments; replace with actual required parameters
-    turning_radius = 300.0
+    # Need to check what value does bank_angle has?  
+    turning_radius = calc_turn_radius(airspeed_ms=55.0, bank_angle_rad=math.radians(25.0)) 
     step_size = 0.1
     build_dubins_path(parser, turning_radius, step_size)
 
