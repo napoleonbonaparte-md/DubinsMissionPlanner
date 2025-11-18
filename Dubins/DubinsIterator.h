@@ -15,6 +15,7 @@ public:
     PathPoint getNextPoint();
     bool hasNext() const;
     void reset();
+private:
     DubinsPath path;
     float current_t;
     float step;
