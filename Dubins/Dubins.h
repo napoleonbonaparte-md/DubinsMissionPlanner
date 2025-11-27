@@ -2,11 +2,12 @@
 #define DUBINS_H
 #include <vector>
 struct PathPoint {
-        float x;
-        float y;
-        float theta;
-        float t;  // distance along path
-        bool valid;
+    float x;
+    float y;
+    float theta;
+    float t;  // distance along path
+    bool valid;
+    int segment_idx; // which segment this point belongs to
 };
 typedef enum 
 {
