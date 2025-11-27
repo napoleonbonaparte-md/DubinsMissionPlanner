@@ -43,7 +43,7 @@ std::vector<PathPoint> collect_dubins_segment_dots(float q0[3], float q1[3], flo
             while (t < t_end) {
                 float q[3];
                 if (dubins_path_sample(&path, t, q) == EDUBOK)
-                    points.push_back({q[0], q[1], q[2], t, true});
+                    points.push_back({q[0], q[1], q[2], t, true, (int)type});
                 t += step_size;
             }
             // Ensure last point is included

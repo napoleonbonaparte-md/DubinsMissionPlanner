@@ -9,7 +9,7 @@ class PathPoint(ctypes.Structure):
         ("theta", ctypes.c_float),
         ("t", ctypes.c_float),
         ("valid", ctypes.c_bool),
-        ("segment_idx", ctypes.c_int)
+        ("segment_idx", ctypes.c_int) # 0 - left, 1 - straight, 2 - right
     ]
 
 class DubinsIterator:

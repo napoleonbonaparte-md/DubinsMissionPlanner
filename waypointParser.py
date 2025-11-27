@@ -139,17 +139,23 @@ def build_intermeddiate_dubins_path(start : List[float], end: List[float], turni
                                      step_size: float, ref_lat: float, ref_lon: float) -> List[Waypoint]:
         dubins_iterator = DubinsIterator(start, end, turning_radius, step_size)
         points = dubins_iterator.get_segment_points()
-        twenty_point_trial = math.floor(1 )
+    
         idx = 0
         intermeddiate_points = []
+            
         while idx < len(points):
             point = points[idx]
             if point.valid:
                 lat, lon = xy_to_latlon(point.x, point.y, ref_lat=ref_lat, ref_lon=ref_lon)
-                waypoint = Waypoint(0, 0, 3, 16, [0,100,0,0], lat, lon, 100, 1)
+                if idx == 0 or idx == len(points) - 1  or points[idx].segment_idx != points[idx-1].segment_idx or points[idx + 1].segment_idx != points[idx].segment_idx: 
+                    waypoint_num = 16 # Moving to next segment wants harder correction.;
+                else:
+                    waypoint_num = 16  # Segment inner point
+                waypoint = Waypoint(0, 0, 3, waypoint_num, [0,100,0,0], lat, lon, 100, 1)
+                print("point segment idx:", point.segment_idx)
                 intermeddiate_points.append(waypoint)
                 print(f"Dubins Point: lat={lat:.6f}, long={lon:.6f}, theta={math.degrees(point.theta):.2f}, t={point.t:.2f}")
-            idx +=  twenty_point_trial 
+            idx +=  1
         return intermeddiate_points
 
     
@@ -175,8 +181,8 @@ def build_dubins_path(parser: waypointParser, turning_radius: float, step_size: 
             idx += len(waypoints) + 1
         else:
             idx += 1
-    write_filename = "dubins_output.waypoints"
-    parser.write_waypoints(write_filename)
+    WRITE_FILENAME = "dubins_output.waypoints"
+    parser.write_waypoints(WRITE_FILENAME)
 
 def constrain_float(value: float, min_value: float, max_value: float) -> float:
     return max(min_value, min(value, max_value))
@@ -189,7 +195,7 @@ def calc_turn_radius(airspeed_ms: float, bank_angle_rad: float) -> float:
 
     bank_angle_rad = constrain_float(bank_angle_rad, min_bank, max_bank)
 
-    return (airspeed_ms * airspeed_ms) / (g * math.tan(bank_angle_rad))
+    return (airspeed_ms * airspeed_ms) / (g * math.tan(bank_angle_rad)) 
 
 def main():
     parser = waypointParser()
