@@ -1,7 +1,7 @@
+from typing import List
 from dubins import DubinsIterator
 from heading_calc import Waypoint, calculate_heading_xy
 import math
-import pyproj
 
 class waypointParser():
     def __init__(self):
@@ -129,11 +129,17 @@ def calculate_loiter_waypoint(x1, y1, x2, y2, ref_lat, ref_lon,
 
     return waypoint
 
+def calc_waypoint_spacing(turning_radius: float) -> float:
+    degrees_per_waypoint = 17  # or 15 for fewer waypoints
+    angle_per_waypoint = math.radians(degrees_per_waypoint)
+    step_size = turning_radius * angle_per_waypoint
+    return step_size
 
-def build_intermeddiate_dubins_path(start, end, turning_radius, step_size, ref_lat, ref_lon):
+def build_intermeddiate_dubins_path(start : List[float], end: List[float], turning_radius : float,
+                                     step_size: float, ref_lat: float, ref_lon: float) -> List[Waypoint]:
         dubins_iterator = DubinsIterator(start, end, turning_radius, step_size)
         points = dubins_iterator.get_segment_points()
-        twenty_point_trial = math.floor(len(points) /  10)
+        twenty_point_trial = math.floor(1 )
         idx = 0
         intermeddiate_points = []
         while idx < len(points):
@@ -191,7 +197,7 @@ def main():
     print(f"First waypoint lat: {parser.waypoints[0].lat}, long: {parser.waypoints[0].long}")
     # Need to check what value does bank_angle has?  
     turning_radius = calc_turn_radius(airspeed_ms=55.0, bank_angle_rad=math.radians(25.0)) 
-    step_size = 0.1
+    step_size = calc_waypoint_spacing(turning_radius)
     build_dubins_path(parser, turning_radius, step_size)
 
 if __name__ == "__main__":
