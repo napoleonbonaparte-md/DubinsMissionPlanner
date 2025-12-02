@@ -86,7 +86,7 @@ def build_transition_zones(points: List, transition_points: int):
             
             if is_opposite:
                 # Mark transition zone: transition_points before and after boundary
-                for offset in range(-transition_points, transition_points + 1):
+                for offset in range(transition_points):
                     trans_idx = idx + offset
                     if 0 < trans_idx < len(points) - 1:  # Don't mark first/last
                         transition_zones.add(trans_idx)
@@ -96,9 +96,9 @@ def build_intermeddiate_dubins_path(start : List[float], end: List[float], turni
                                      step_size: float, ref_lat: float, ref_lon: float) -> List[Waypoint]:
         dubins_iterator = DubinsIterator(start, end, turning_radius, step_size)
         points = dubins_iterator.get_segment_points()
-        max_angle_switch = 50.0 # degrees. 
-        transition_points = math.ceil(max_angle_switch * turning_radius / step_size)
-        
+        max_angle_switch = math.radians(50.0) # radians. 
+        transition_points = math.ceil(max_angle_switch * turning_radius / step_size) + 1
+        print("Transition points:", transition_points)
         segment_boundaries, transition_zones = build_transition_zones(points, transition_points)
         print(f"Segment boundaries at indices: {segment_boundaries}")
         print(f"Transition zones at indices: {sorted(transition_zones)}")
@@ -113,16 +113,14 @@ def build_intermeddiate_dubins_path(start : List[float], end: List[float], turni
             # Decide waypoint type
             if idx == 0 or idx == len(points) - 1:
                 waypoint_num = DUBINS_WAYPOINT_NUM
-            elif idx in transition_zones:
-                waypoint_num = WAYPOINT_NUM
-            elif idx in segment_boundaries:
+            elif idx in segment_boundaries or (len(transition_zones) > 0 and (idx == min(transition_zones) or idx == max(transition_zones))):
                 waypoint_num = DUBINS_WAYPOINT_NUM
             else:
                 waypoint_num = WAYPOINT_NUM
             
             waypoint = Waypoint(0, 0, 3, waypoint_num, [0, 100, 0, 0], lat, lon, 100, 1)
             intermeddiate_points.append(waypoint)
-            print(f"Segment {point.segment_idx}, Type {waypoint_num}: lat={lat:.6f}, lon={lon:.6f}, theta={math.degrees(point.theta):.2f}")
+            print(f"Segment {point.segment_idx}, idx {idx}, Type {waypoint_num}: lat={lat:.6f}, lon={lon:.6f}, theta={math.degrees(point.theta):.2f}")
             
         return intermeddiate_points
 
