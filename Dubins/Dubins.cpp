@@ -32,11 +32,11 @@ std::vector<PathPoint> collect_dubins_segment_dots(float q0[3], float q1[3], flo
         float t_end = t_global + seg_length;
         if (type == S_SEG) {
             // Only first and last point
-           /* float q_first[3], q_last[3];
+            float q_first[3], q_last[3];
             if (dubins_path_sample(&path, t_start, q_first) == EDUBOK)
-                points.push_back({q_first[0], q_first[1], q_first[2], t_start, true});
+                points.push_back({q_first[0], q_first[1], q_first[2], t_start, true, (int) type});
             if (dubins_path_sample(&path, t_end, q_last) == EDUBOK)
-                points.push_back({q_last[0], q_last[1], q_last[2], t_end, true});*/
+                points.push_back({q_last[0], q_last[1], q_last[2], t_end, true, (int) type});
         } else {
             // All points in turn
             float t = t_start;

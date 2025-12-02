@@ -1,7 +1,17 @@
+from enum import Enum
 from typing import List
 from dubins import DubinsIterator
 from heading_calc import Waypoint, calculate_heading_xy
 import math
+
+WAYPOINT_NUM = 16
+DUBINS_WAYPOINT_NUM = 39
+
+class SEG_TYPE(Enum):
+    LEFT = 0
+    STRAIGHT = 1
+    RIGHT = 2
+
 
 class waypointParser():
     def __init__(self):
@@ -49,113 +59,71 @@ def xy_to_latlon(x, y, ref_lat, ref_lon):
     return lat, lon
 
 
-def calculate_loiter_waypoint(x1, y1, x2, y2, ref_lat, ref_lon,
-                              turning_radius, turn_right=False):
-    """
-    Compute a LOITER_TO_ALT waypoint that makes the plane fly an arc of
-    given turning_radius between two EN points (x1,y1) and (x2,y2).
-
-    x1, y1, x2, y2  : EN coordinates (meters) in some local frame
-    ref_lat, ref_lon: reference lat/lon for xy_to_latlon
-    turning_radius  : desired turn radius R (meters)
-    turn_right      : True -> right-hand / clockwise, False -> left-hand / CCW
-
-    Returns:
-        Waypoint object for MAV_CMD_NAV_LOITER_TO_ALT (31)
-    """
-    if x1 == x2 and y1 == y2:
-        return None
-    # Vector from P1 to P2
-    dx = x2 - x1
-    dy = y2 - y1
-    chord_len = math.hypot(dx, dy)  # L
-
-    # Check feasibility: chord length must be <= 2R
-    if chord_len > 2.0 * turning_radius:
-        raise ValueError(
-            f"Cannot form a circle of radius {turning_radius:.1f} m through "
-            f"points separated by {chord_len:.1f} m (need L <= 2R)."
-        )
-
-    # Midpoint M between P1 and P2
-    mid_x = (x1 + x2) * 0.5
-    mid_y = (y1 + y2) * 0.5
-
-    # Unit vector along chord (from P1 to P2)
-    ux = dx / chord_len
-    uy = dy / chord_len
-
-    # Perpendicular unit vectors (normals)
-    # Left normal (-uy, ux), Right normal (uy, -ux)
-    if turn_right:
-        nx, ny = uy, -ux
-        loiter_radius_param = +turning_radius  # >0 = clockwise in Plane
-    else:
-        nx, ny = -uy, ux
-        loiter_radius_param = -turning_radius  # <0 = counter-clockwise
-
-    # Distance from midpoint to circle center:
-    # h = sqrt(R^2 - (L/2)^2)
-    half_L = 0.5 * chord_len
-    h = math.sqrt(turning_radius**2 - half_L**2)
-
-    # Circle center in EN frame
-    center_x = mid_x + nx * h
-    center_y = mid_y + ny * h
-
-    # Convert center EN -> lat/lon
-    lat, lon = xy_to_latlon(center_x, center_y, ref_lat, ref_lon)
-
-    # Build LOITER_TO_ALT waypoint
-    # MAV_CMD_NAV_LOITER_TO_ALT (31) params for Plane:
-    # param1: unused
-    # param2: radius (m), sign sets CW/CCW
-    # param3: unused
-    # param4: XTrack Tangent (0=center, 1=tangent)
-    params = [0, loiter_radius_param, 0, 1]
-
-    # Example: altitude 100m, frame=3 (GLOBAL_REL_ALT), autocontinue=1
-    waypoint = Waypoint(
-        0,          # seq (caller can overwrite)
-        0,          # current
-        3,          # frame (MAV_FRAME_GLOBAL_RELATIVE_ALT)
-        31,         # command (MAV_CMD_NAV_LOITER_TO_ALT)
-        params,     # [p1, p2, p3, p4]
-        lat,
-        lon,
-        100,        # alt (m) – adjust as needed
-        1           # autocontinue
-    )
-
-    return waypoint
-
 def calc_waypoint_spacing(turning_radius: float) -> float:
     degrees_per_waypoint = 17  # or 15 for fewer waypoints
     angle_per_waypoint = math.radians(degrees_per_waypoint)
     step_size = turning_radius * angle_per_waypoint
     return step_size
 
+def build_transition_zones(points: List, transition_points: int):
+     # Pre-calculate segment boundaries and transition zones
+    segment_boundaries = []
+    transition_zones = set()  # Set of indices that are in transition zones
+    
+    for idx in range(len(points)):
+        if idx == 0:
+            continue
+        if points[idx].segment_idx != points[idx - 1].segment_idx:
+            segment_boundaries.append(idx)
+            
+            # Check if this is an opposite transition (R↔L or L↔R)
+            prev_seg = points[idx - 1].segment_idx
+            curr_seg = points[idx].segment_idx
+            is_opposite = (
+                (prev_seg == 0 and curr_seg == 2) or  # L to R
+                (prev_seg == 2 and curr_seg == 0)     # R to L
+            )
+            
+            if is_opposite:
+                # Mark transition zone: transition_points before and after boundary
+                for offset in range(-transition_points, transition_points + 1):
+                    trans_idx = idx + offset
+                    if 0 < trans_idx < len(points) - 1:  # Don't mark first/last
+                        transition_zones.add(trans_idx)
+    return segment_boundaries, transition_zones
+
 def build_intermeddiate_dubins_path(start : List[float], end: List[float], turning_radius : float,
                                      step_size: float, ref_lat: float, ref_lon: float) -> List[Waypoint]:
         dubins_iterator = DubinsIterator(start, end, turning_radius, step_size)
         points = dubins_iterator.get_segment_points()
-    
-        idx = 0
+        max_angle_switch = 50.0 # degrees. 
+        transition_points = math.ceil(max_angle_switch * turning_radius / step_size)
+        
+        segment_boundaries, transition_zones = build_transition_zones(points, transition_points)
+        print(f"Segment boundaries at indices: {segment_boundaries}")
+        print(f"Transition zones at indices: {sorted(transition_zones)}")
+        # Build waypoints
         intermeddiate_points = []
+        for idx, point in enumerate(points):
+            if not point.valid:
+                continue
+                
+            lat, lon = xy_to_latlon(point.x, point.y, ref_lat=ref_lat, ref_lon=ref_lon)
             
-        while idx < len(points):
-            point = points[idx]
-            if point.valid:
-                lat, lon = xy_to_latlon(point.x, point.y, ref_lat=ref_lat, ref_lon=ref_lon)
-                if idx == 0 or idx == len(points) - 1  or points[idx].segment_idx != points[idx-1].segment_idx or points[idx + 1].segment_idx != points[idx].segment_idx: 
-                    waypoint_num = 16 # Moving to next segment wants harder correction.;
-                else:
-                    waypoint_num = 16  # Segment inner point
-                waypoint = Waypoint(0, 0, 3, waypoint_num, [0,100,0,0], lat, lon, 100, 1)
-                print("point segment idx:", point.segment_idx)
-                intermeddiate_points.append(waypoint)
-                print(f"Dubins Point: lat={lat:.6f}, long={lon:.6f}, theta={math.degrees(point.theta):.2f}, t={point.t:.2f}")
-            idx +=  1
+            # Decide waypoint type
+            if idx == 0 or idx == len(points) - 1:
+                waypoint_num = DUBINS_WAYPOINT_NUM
+            elif idx in transition_zones:
+                waypoint_num = WAYPOINT_NUM
+            elif idx in segment_boundaries:
+                waypoint_num = DUBINS_WAYPOINT_NUM
+            else:
+                waypoint_num = WAYPOINT_NUM
+            
+            waypoint = Waypoint(0, 0, 3, waypoint_num, [0, 100, 0, 0], lat, lon, 100, 1)
+            intermeddiate_points.append(waypoint)
+            print(f"Segment {point.segment_idx}, Type {waypoint_num}: lat={lat:.6f}, lon={lon:.6f}, theta={math.degrees(point.theta):.2f}")
+            
         return intermeddiate_points
 
     
@@ -191,7 +159,7 @@ def calc_turn_radius(airspeed_ms: float, bank_angle_rad: float) -> float:
     g = 9.80665
     # avoid tan(0) and crazy bank angles
     min_bank = math.radians(5.0)
-    max_bank = math.radians(80.0)
+    max_bank = math.radians(60.0)
 
     bank_angle_rad = constrain_float(bank_angle_rad, min_bank, max_bank)
 
@@ -203,6 +171,7 @@ def main():
     print(f"First waypoint lat: {parser.waypoints[0].lat}, long: {parser.waypoints[0].long}")
     # Need to check what value does bank_angle has?  
     turning_radius = calc_turn_radius(airspeed_ms=55.0, bank_angle_rad=math.radians(25.0)) 
+    
     step_size = calc_waypoint_spacing(turning_radius)
     build_dubins_path(parser, turning_radius, step_size)
 
