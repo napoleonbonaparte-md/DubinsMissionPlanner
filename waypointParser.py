@@ -18,7 +18,7 @@ class waypointParser():
         self.waypoints = [] 
 
     def parse_waypoints(self):
-        with open("way.waypoints", "r") as file:
+        with open("way2.waypoints", "r") as file:
             lines = file.readlines()
             for line in lines[1:]:
                 data = line.split('\t')
@@ -70,10 +70,8 @@ def build_transition_zones(points: List, transition_points: int):
     segment_boundaries = []
     transition_zones = set()  # Set of indices that are in transition zones
     
-    for idx in range(len(points)):
-        if idx == 0:
-            continue
-        if points[idx].segment_idx != points[idx - 1].segment_idx:
+    for idx in range(1, len(points) - 1):
+        if points[idx].segment_idx != points[idx - 1].segment_idx or points[idx + 1].segment_idx != points[idx].segment_idx:
             segment_boundaries.append(idx)
             
             # Check if this is an opposite transition (R↔L or L↔R)
@@ -97,11 +95,10 @@ def build_intermeddiate_dubins_path(start : List[float], end: List[float], turni
         dubins_iterator = DubinsIterator(start, end, turning_radius, step_size)
         points = dubins_iterator.get_segment_points()
         max_angle_switch = math.radians(50.0) # radians. 
-        transition_points = math.ceil(max_angle_switch * turning_radius / step_size) + 1
-        print("Transition points:", transition_points)
-        segment_boundaries, transition_zones = build_transition_zones(points, transition_points)
-        print(f"Segment boundaries at indices: {segment_boundaries}")
-        print(f"Transition zones at indices: {sorted(transition_zones)}")
+        #transition_points = math.ceil(max_angle_switch * turning_radius / step_size) + 1
+        #print("Transition points:", transition_points)
+        #segment_boundaries, transition_zones = build_transition_zones(points, transition_points)
+       
         # Build waypoints
         intermeddiate_points = []
         for idx, point in enumerate(points):
@@ -110,17 +107,12 @@ def build_intermeddiate_dubins_path(start : List[float], end: List[float], turni
                 
             lat, lon = xy_to_latlon(point.x, point.y, ref_lat=ref_lat, ref_lon=ref_lon)
             
-            # Decide waypoint type
-            if idx == 0 or idx == len(points) - 1:
-                waypoint_num = DUBINS_WAYPOINT_NUM
-            elif idx in segment_boundaries or (len(transition_zones) > 0 and (idx == min(transition_zones) or idx == max(transition_zones))):
-                waypoint_num = DUBINS_WAYPOINT_NUM
-            else:
-                waypoint_num = WAYPOINT_NUM
             
-            waypoint = Waypoint(0, 0, 3, waypoint_num, [0, 100, 0, 0], lat, lon, 100, 1)
+            
+                
+            waypoint = Waypoint(0, 0, 3, DUBINS_WAYPOINT_NUM, [0, 100, 0, 0], lat, lon, 100, 1)
             intermeddiate_points.append(waypoint)
-            print(f"Segment {point.segment_idx}, idx {idx}, Type {waypoint_num}: lat={lat:.6f}, lon={lon:.6f}, theta={math.degrees(point.theta):.2f}")
+            print(f"Segment {point.segment_idx}, idx {idx}, Type {DUBINS_WAYPOINT_NUM}: lat={lat:.6f}, lon={lon:.6f}, theta={math.degrees(point.theta):.2f}")
             
         return intermeddiate_points
 
