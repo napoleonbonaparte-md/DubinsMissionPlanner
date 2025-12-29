@@ -265,12 +265,14 @@ def build_dubins_path(parser: waypointParser, turning_radius: float, step_size: 
         if parser.waypoints[idx].type == 40:
             print(f"Detected Dubisns start lat {parser.waypoints[idx].lat}, long {parser.waypoints[idx].long}")
             parser.waypoints[idx].type = 16  # Change to normal waypoint
-            x_pre, y_pre = latlon_to_xy(parser.waypoints[idx - 1].lat, parser.waypoints[idx - 1].long, ref_lat, ref_lon)
+            
             x_start, y_start = latlon_to_xy(parser.waypoints[idx].lat, parser.waypoints[idx].long, ref_lat, ref_lon)
             x_end, y_end = latlon_to_xy(parser.waypoints[idx + 1].lat, parser.waypoints[idx + 1].long, ref_lat, ref_lon)
-            x_post, y_post = latlon_to_xy(parser.waypoints[idx + 2].lat, parser.waypoints[idx + 2].long, ref_lat, ref_lon)
-            heading_start = calculate_heading_xy(x_pre, y_pre, x_start, y_start)
-            heading_end = calculate_heading_xy(x_end, y_end, x_post, y_post)
+            
+            # value needs to be in radians!!!! 
+            heading_start = parser.waypoints[idx].params[0]
+            heading_end = parser.waypoints[idx].params[1]
+            
             print(f"calculated headings: start {math.degrees(heading_start):.2f}, end {math.degrees(heading_end):.2f}")
             start = (x_start, y_start, heading_start)
             end = (x_end, y_end, heading_end)
