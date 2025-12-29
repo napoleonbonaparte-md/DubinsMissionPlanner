@@ -73,6 +73,12 @@ def calc_waypoint_spacing(turning_radius: float) -> float:
     step_size = turning_radius * angle_per_waypoint
     return step_size
 
+def Build_Default_Dubins_Waypoints(waypoints : List[Waypoint]) -> None:
+    parser = waypointParser()
+    parser.waypoints = waypoints
+    turning_radius = 1.0  # Nullifying dubins algorithm
+    step_size = calc_waypoint_spacing(turning_radius)
+    build_dubins_path(parser, turning_radius, step_size)
 
 def export_trajectory_to_json(trac_ing: TrajectoryIntegrator, ref_lat: float, ref_lon: float, output_path: str = "trajectory_export.json"):
     """Export trajectory integrator data to JSON with lat/lon coordinates.
