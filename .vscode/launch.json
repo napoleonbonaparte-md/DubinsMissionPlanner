@@ -1,6 +1,7 @@
 {
     "version": "0.2.0",
     "configurations": [
+        
 
         {
             "name": "Run waypointParser.py (venv)",
@@ -9,7 +10,7 @@
             "program": "${workspaceFolder}/waypointParser.py",
             "console": "integratedTerminal",
             "env": {},
-            "python": "${workspaceFolder}/venv/bin/python"
+            "python": "${workspaceFolder}/.venv/bin/python"
         }
         ,{
             "name": "Run dubins.py (venv)",
@@ -18,7 +19,25 @@
             "program": "${workspaceFolder}/dubins.py",
             "console": "integratedTerminal",
             "env": {},
-            "python": "${workspaceFolder}/venv/bin/python"
+            "python": "${workspaceFolder}/.venv/bin/python"
+        },
+        {
+            "name": "Run TrajectoryIntegrator.py (venv)",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/Trajectory/TrajectoryIntegrator.py",
+            "console": "integratedTerminal",
+            "env": {},
+            "python": "${workspaceFolder}/.venv/bin/python"
+        },
+               {
+            "name": "Run mission_planner.py (venv)",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/mission_planner.py",
+            "console": "integratedTerminal",
+            "env": {},
+            "python": "${workspaceFolder}/.venv/bin/python"
         }
     ]
 }

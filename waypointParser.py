@@ -1,12 +1,18 @@
 from enum import Enum
 from typing import List
+from Trajectory.TrajectoryIntegrator import PerformanceDatabase, TrajectoryIntegrator
 from dubins import DubinsIterator
 from heading_calc import Waypoint, calculate_heading_xy
 import math
+import json
 
 WAYPOINT_NUM = 16
 DUBINS_WAYPOINT_NUM = 39
 ARC_CONFIGURATION_WAPOINT_NUM = 40
+last_alt = 0
+last_mach = 0.2
+perf_db = PerformanceDatabase("./Trajectory/Performances_Cov412BNoLG.xlsx")
+trac_ing = TrajectoryIntegrator(perf_db=perf_db)
 class SEG_TYPE(Enum):
     LEFT = 0
     STRAIGHT = 1
@@ -66,6 +72,79 @@ def calc_waypoint_spacing(turning_radius: float) -> float:
     angle_per_waypoint = math.radians(degrees_per_waypoint)
     step_size = turning_radius * angle_per_waypoint
     return step_size
+
+
+def export_trajectory_to_json(trac_ing: TrajectoryIntegrator, ref_lat: float, ref_lon: float, output_path: str = "trajectory_export.json"):
+    """Export trajectory integrator data to JSON with lat/lon coordinates.
+    
+    Args:
+        trac_ing: TrajectoryIntegrator instance with trajectory data
+        ref_lat: Reference latitude for coordinate conversion
+        ref_lon: Reference longitude for coordinate conversion
+        output_path: Output JSON file path
+    """
+    # Extract arrays from trajectory integrator
+    t_arr = getattr(trac_ing, 't', [])
+    x_arr = getattr(trac_ing, 'x', [])
+    y_arr = getattr(trac_ing, 'y', [])
+    z_arr = getattr(trac_ing, 'z', [])
+    velocity_arr = getattr(trac_ing, 'velocity', [])
+    mach_arr = getattr(trac_ing, 'mach', [])
+    fuel_arr = getattr(trac_ing, 'fuel', [])
+    heading_arr = getattr(trac_ing, 'heading', [])
+    phase_arr = getattr(trac_ing, 'phase', [])
+    Ps_arr = getattr(trac_ing, 'Ps', [])
+    gammaV_arr = getattr(trac_ing, 'gammaV', [])
+    fuel_flow_arr = getattr(trac_ing, 'fuel_flow', [])
+    
+    # Build samples list
+    n_samples = len(t_arr)
+    samples = []
+    
+    for i in range(n_samples):
+        x_val = x_arr[i] if i < len(x_arr) else None
+        y_val = y_arr[i] if i < len(y_arr) else None
+        
+        # Convert x,y to lat/lon
+        lat_val = None
+        lon_val = None
+        if x_val is not None and y_val is not None:
+            lat_val, lon_val = xy_to_latlon(x_val, y_val, ref_lat, ref_lon)
+        
+        sample = {
+            'index': i,
+            't_s': t_arr[i] if i < len(t_arr) else None,
+            'x_m': x_val,
+            'y_m': y_val,
+            'lat_deg': lat_val,
+            'lon_deg': lon_val,
+            'alt_m': z_arr[i] if i < len(z_arr) else None,
+            'velocity_ms': velocity_arr[i] if i < len(velocity_arr) else None,
+            'mach': mach_arr[i] if i < len(mach_arr) else None,
+            'fuel_kg': fuel_arr[i] if i < len(fuel_arr) else None,
+            'heading_rad': heading_arr[i] if i < len(heading_arr) else None,
+            'phase': phase_arr[i] if i < len(phase_arr) else None,
+            'Ps_ms': Ps_arr[i] if i < len(Ps_arr) else None,
+            'gammaV_deg': gammaV_arr[i] if i < len(gammaV_arr) else None,
+            'fuel_flow_kgs': fuel_flow_arr[i] if i < len(fuel_flow_arr) else None,
+        }
+        samples.append(sample)
+    
+    # Build output structure
+    output_data = {
+        'metadata': {
+            'ref_lat_deg': ref_lat,
+            'ref_lon_deg': ref_lon,
+            'num_samples': n_samples
+        },
+        'samples': samples
+    }
+    
+    # Write to JSON file
+    with open(output_path, 'w', encoding='utf-8') as f:
+        json.dump(output_data, f, indent=2)
+    
+    print(f"Exported {n_samples} trajectory samples to {output_path}")
 
 def build_transition_zones(points: List, transition_points: int):
      # Pre-calculate segment boundaries and transition zones
@@ -204,20 +283,31 @@ def calc_arc_circles(points: List, ref_lat: float, ref_lon: float, turning_radiu
 
 def build_intermeddiate_dubins_path(start : List[float], end: List[float], turning_radius : float,
                                      step_size: float, ref_lat: float, ref_lon: float) -> List[Waypoint]:
+        global last_alt
+        global last_mach
+        global trac_ing
         dubins_iterator = DubinsIterator(start, end, turning_radius, step_size)
         points = dubins_iterator.get_segment_points()
         # Build waypoints
         left_circle, right_circle = calc_arc_circles(points, ref_lat, ref_lon, turning_radius)
         print(f"Left arc circles: {left_circle}")
         print(f"Right arc circles: {right_circle}")
-        
+        valid_points = [] # PathPoint that we actually use.
         intermeddiate_points = []
         prev_segment = None
-        
+
+
         for idx, point in enumerate(points):
             if not point.valid:
                 continue
-                
+            # Trajectory integration is defined per-leg, so only run it when we have a valid "next" point
+            if idx >= len(points) - 1 or not points[idx + 1].valid:
+                continue
+
+           
+            # Run the trajectory integrator on the current leg
+            
+
             current_segment = point.segment_idx
             is_segment_start = (prev_segment is None or prev_segment != current_segment)
             is_segment_end = (idx == len(points) - 1 or points[idx + 1].segment_idx != current_segment)
@@ -246,16 +336,69 @@ def build_intermeddiate_dubins_path(start : List[float], end: List[float], turni
                     waypoint_num = DUBINS_WAYPOINT_NUM
             
             if should_add_waypoint:
+                valid_points.append(point)
+                # Best-effort extraction of last altitude/velocity from either:
+                # 1) a dict returned by _process_leg, or
+                # 2) attributes populated on the integrator instance
+
+   
+  
+
                 waypoint = Waypoint(0, 0, 3, waypoint_num, [0, 50, 0, 0], lat, lon, 100, 1)
+
+                
                 intermeddiate_points.append(waypoint)
                 print(f"Segment {current_segment}, idx {idx}, Type {waypoint_num}: lat={lat:.6f}, lon={lon:.6f}, theta={math.degrees(point.theta):.2f}")
             
             prev_segment = current_segment
+
+        second_points = []
+        for idx, point in enumerate(valid_points):
+            z = None 
+            mach = None
+            next_point = points[idx + 1]
+           
+            # Basic leg geometry (useful both for logging and for integrators that rely on leg length / track)
+            dx_m = next_point.x - point.x
+            dy_m = next_point.y - point.y
+            leg_length_m = math.hypot(dx_m, dy_m)
+            leg_track_rad = math.atan2(dy_m, dx_m)
+
+            leg_result = trac_ing._process_leg(start_wp=point, end_wp=next_point, leg_idx=0, leg_distance=leg_length_m, current_alt=last_alt,current_mach=last_mach,current_heading=point.theta)
+            z = leg_result[0]
+            mach = leg_result[1]
+                            # (Optional) if you want to use these values later, keep them; for now they are computed and available
+            print(f"Leg {idx}->{idx+1}: s={leg_length_m:.2f}m track={math.degrees(leg_track_rad):.1f}deg z={z} v={mach}")
+            vel = mach * 343.0  # Convert Mach to m/s (approximate at sea level)
+            alt = z
+            last_alt = alt 
+            last_mach = mach
+            do_change_speed  = Waypoint(
+                    0,  # seq
+                    0,      # current
+                    3,      # frame
+                    178,    # command (178 = MAV_CMD_DO_CHANGE_SPEED)
+                    [0,      # speed_type (0 = airspeed in m/s)
+                    vel,    # speed value
+                    -1,     # throttle (-1 = no change)
+                    0],      # relative (0 = absolute)
+                    lat,
+                    lon,
+                    alt,
+                    1       # autocontinue
+                )
             
-        return intermeddiate_points
+            
+            intermeddiate_points[idx].alt = z
+            second_points.append(intermeddiate_points[idx]) 
+            second_points.append(do_change_speed)
+        
+
+        return second_points
 
     
 def build_dubins_path(parser: waypointParser, turning_radius: float, step_size: float):
+    global trac_ing
     ref_lat = parser.waypoints[0].lat
     ref_lon = parser.waypoints[0].long
     idx = 0
@@ -279,6 +422,8 @@ def build_dubins_path(parser: waypointParser, turning_radius: float, step_size: 
             idx += 1
     WRITE_FILENAME = "dubins_output.waypoints"
     parser.write_waypoints(WRITE_FILENAME)
+    # Export trajectory data to JSON
+    export_trajectory_to_json(trac_ing, ref_lat=ref_lat, ref_lon=ref_lon, output_path="trajectory_export.json")
 
 def constrain_float(value: float, min_value: float, max_value: float) -> float:
     return max(min_value, min(value, max_value))
@@ -299,7 +444,7 @@ def main():
     print(f"First waypoint lat: {parser.waypoints[0].lat}, long: {parser.waypoints[0].long}")
     # Need to check what value does bank_angle has?  
     turning_radius = calc_turn_radius(airspeed_ms=55.0, bank_angle_rad=math.radians(45.0)) 
-    
+    turning_radius = 1
     print(f"Calculated turning radius: {turning_radius:.2f} m")
     step_size = calc_waypoint_spacing(turning_radius)
     build_dubins_path(parser, turning_radius, step_size)
