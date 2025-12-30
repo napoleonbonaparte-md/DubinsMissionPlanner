@@ -987,7 +987,7 @@ class TrajectoryIntegrator:
             
             try:
                 iterator = DubinsIterator(start_state, end_state, float(turn_radius), float(step_size))
-                points = iterator.get_all_points()
+                points = iterator.get_segment_points()
                 
                 # Calculate distance from points
                 leg_distance = 0.0
@@ -1101,7 +1101,7 @@ class TrajectoryIntegrator:
             
             try:
                 iterator = DubinsIterator(start_state, end_state, float(turn_radius), float(step_size))
-                points = iterator.get_all_points()
+                points = iterator.get_segment_points()
                 
                 # Convert to dubins dict format for compatibility with rest of code
                 valid_points = [p for p in points if p.valid]
@@ -1113,7 +1113,7 @@ class TrajectoryIntegrator:
                     'y': np.array([p.y for p in valid_points], dtype=float),
                     'heading': np.array([p.theta for p in valid_points], dtype=float),
                     'distance': 0.0,
-                    'type': 'DUBINS'
+                    'type': np.array([p.segment_idx for p in valid_points], dtype=int)
                 }
                 
                 # Calculate total distance
@@ -1131,7 +1131,7 @@ class TrajectoryIntegrator:
                     'y': np.linspace(start_wp[1], end_wp[1], n_points),
                     'heading': np.full(n_points, current_heading),
                     'distance': float(np.sqrt((end_wp[0] - start_wp[0])**2 + (end_wp[1] - start_wp[1])**2)),
-                    'type': 'STRAIGHT_FALLBACK'
+                    'type': 0
                 }
             
             print(f"  Dubins path: {dubins['type']}, distance: {dubins['distance']/1000:.2f} km")
@@ -1430,6 +1430,8 @@ class TrajectoryIntegrator:
         
         self.export_trajectory_to_json(trajectory, origin_lat, origin_lon, filename='trajectory_output.json')
 
+        self.export_leg_summary(trajectory, origin_lat, origin_lon, waypoints, filename='leg_summary.json')
+
         return trajectory
     
     def _atmosphere(self, altitude):
@@ -1710,6 +1712,239 @@ class TrajectoryIntegrator:
         print(f"\nTrajectory exported to JSON: {filename}")
         print(f"Total samples: {len(samples)}")
         print(f"Time span: {t[-1]/60:.1f} minutes")
+    
+    def export_leg_summary(self, trajectory, origin_lat, origin_lon, original_waypoints, filename='leg_summary.json'):
+        """
+        Export summary information for each leg (Dubins path segment)
+        
+        Parameters:
+        -----------
+        trajectory : dict
+            Trajectory dictionary from calculate_trajectory()
+        origin_lat : float
+            Origin latitude in degrees
+        origin_lon : float
+            Origin longitude in degrees
+        original_waypoints : list
+            List of original waypoints [[x1, y1], [x2, y2], ...]
+        filename : str
+            Output filename for JSON export
+        
+        Returns:
+        --------
+        leg_data : list of dicts with leg information
+        """
+        # Earth radius in meters
+        R = 6371000.0
+        
+        # Convert local XY to lat/lon
+        def xy_to_latlon(x, y, origin_lat, origin_lon):
+            """Convert local X,Y (meters) to lat/lon using simple equirectangular projection"""
+            lat = origin_lat + (y / R) * (180.0 / np.pi)
+            lon = origin_lon + (x / R) * (180.0 / np.pi) / np.cos(origin_lat * np.pi / 180.0)
+            return lat, lon
+        
+        # Extract trajectory data
+        x = trajectory['x']
+        y = trajectory['y']
+        z = trajectory['z']
+        velocity = trajectory['velocity']
+        mach_arr = trajectory['mach']
+        fuel = trajectory['fuel']
+        dubins_paths = trajectory.get('dubins_paths', [])
+        
+        # Build leg summary
+        legs = []
+        
+        for path_idx, dubins in enumerate(dubins_paths):
+            # Iterate through the type array and create a leg entry each time type changes
+            dubins_types = dubins['type']
+            
+            if len(dubins_types) == 0:
+                continue
+            
+            # First point (start of path)
+            idx = 0
+            point_x = float(dubins['x'][idx])
+            point_y = float(dubins['y'][idx])
+            point_heading = float(dubins['heading'][idx])
+            point_lat, point_lon = xy_to_latlon(point_x, point_y, origin_lat, origin_lon)
+            
+            # Find trajectory data
+            distances = np.sqrt((x - point_x)**2 + (y - point_y)**2)
+            traj_idx = np.argmin(distances)
+            point_velocity = float(velocity[traj_idx])
+            point_altitude = float(z[traj_idx])
+            point_mach = float(mach_arr[traj_idx])
+            point_fuel = float(fuel[traj_idx])
+            point_turn_radius = self.perf_db.get_turn_radius(point_altitude, point_mach, point_fuel)
+            
+            # Calculate center of circle for turn segments
+            seg_type = int(dubins_types[idx])
+            if seg_type == 0:  # L_SEG - left turn, center is to the left
+                center_x = point_x - point_turn_radius * np.sin(point_heading)
+                center_y = point_y + point_turn_radius * np.cos(point_heading)
+                center_lat, center_lon = xy_to_latlon(center_x, center_y, origin_lat, origin_lon)
+            elif seg_type == 2:  # R_SEG - right turn, center is to the right
+                center_x = point_x + point_turn_radius * np.sin(point_heading)
+                center_y = point_y - point_turn_radius * np.cos(point_heading)
+                center_lat, center_lon = xy_to_latlon(center_x, center_y, origin_lat, origin_lon)
+            else:  # S_SEG - straight, no center
+                center_x = None
+                center_y = None
+                center_lat = None
+                center_lon = None
+            
+            leg_info = {
+                'leg_number': len(legs) + 1,
+                'path_number': path_idx + 1,
+                'segment_type': seg_type,
+                'x_m': point_x,
+                'y_m': point_y,
+                'lat': point_lat,
+                'lon': point_lon,
+                'heading_rad': point_heading,
+                'turn_radius_m': float(point_turn_radius),
+                'center_x_m': float(center_x) if center_x is not None else None,
+                'center_y_m': float(center_y) if center_y is not None else None,
+                'center_lat': float(center_lat) if center_lat is not None else None,
+                'center_lon': float(center_lon) if center_lon is not None else None,
+                'altitude_m': point_altitude,
+                'velocity_ms': point_velocity,
+                'mach': point_mach,
+                'fuel_kg': point_fuel
+            }
+            legs.append(leg_info)
+            
+            # Now check for type changes
+            current_type = dubins_types[0]
+            for idx in range(1, len(dubins_types)):
+                if dubins_types[idx] != current_type:
+                    # Type changed - add this point
+                    current_type = dubins_types[idx]
+                    
+                    point_x = float(dubins['x'][idx])
+                    point_y = float(dubins['y'][idx])
+                    point_heading = float(dubins['heading'][idx])
+                    point_lat, point_lon = xy_to_latlon(point_x, point_y, origin_lat, origin_lon)
+                    
+                    # Find trajectory data
+                    distances = np.sqrt((x - point_x)**2 + (y - point_y)**2)
+                    traj_idx = np.argmin(distances)
+                    point_velocity = float(velocity[traj_idx])
+                    point_altitude = float(z[traj_idx])
+                    point_mach = float(mach_arr[traj_idx])
+                    point_fuel = float(fuel[traj_idx])
+                    point_turn_radius = self.perf_db.get_turn_radius(point_altitude, point_mach, point_fuel)
+                    
+                    # Calculate center of circle for turn segments
+                    seg_type = int(current_type)
+                    if seg_type == 0:  # L_SEG - left turn, center is to the left
+                        center_x = point_x - point_turn_radius * np.sin(point_heading)
+                        center_y = point_y + point_turn_radius * np.cos(point_heading)
+                        center_lat, center_lon = xy_to_latlon(center_x, center_y, origin_lat, origin_lon)
+                    elif seg_type == 2:  # R_SEG - right turn, center is to the right
+                        center_x = point_x + point_turn_radius * np.sin(point_heading)
+                        center_y = point_y - point_turn_radius * np.cos(point_heading)
+                        center_lat, center_lon = xy_to_latlon(center_x, center_y, origin_lat, origin_lon)
+                    else:  # S_SEG - straight, no center
+                        center_x = None
+                        center_y = None
+                        center_lat = None
+                        center_lon = None
+                    
+                    leg_info = {
+                        'leg_number': len(legs) + 1,
+                        'path_number': path_idx + 1,
+                        'segment_type': seg_type,
+                        'x_m': point_x,
+                        'y_m': point_y,
+                        'lat': point_lat,
+                        'lon': point_lon,
+                        'heading_rad': point_heading,
+                        'turn_radius_m': float(point_turn_radius),
+                        'center_x_m': float(center_x) if center_x is not None else None,
+                        'center_y_m': float(center_y) if center_y is not None else None,
+                        'center_lat': float(center_lat) if center_lat is not None else None,
+                        'center_lon': float(center_lon) if center_lon is not None else None,
+                        'altitude_m': point_altitude,
+                        'velocity_ms': point_velocity,
+                        'mach': point_mach,
+                        'fuel_kg': point_fuel
+                    }
+                    legs.append(leg_info)
+            
+            # Last point (end of path)
+            idx = len(dubins_types) - 1
+            point_x = float(dubins['x'][idx])
+            point_y = float(dubins['y'][idx])
+            point_heading = float(dubins['heading'][idx])
+            point_lat, point_lon = xy_to_latlon(point_x, point_y, origin_lat, origin_lon)
+            
+            # Find trajectory data
+            distances = np.sqrt((x - point_x)**2 + (y - point_y)**2)
+            traj_idx = np.argmin(distances)
+            point_velocity = float(velocity[traj_idx])
+            point_altitude = float(z[traj_idx])
+            point_mach = float(mach_arr[traj_idx])
+            point_fuel = float(fuel[traj_idx])
+            point_turn_radius = self.perf_db.get_turn_radius(point_altitude, point_mach, point_fuel)
+            
+            # Calculate center of circle for turn segments
+            seg_type = int(dubins_types[idx])
+            if seg_type == 0:  # L_SEG - left turn, center is to the left
+                center_x = point_x - point_turn_radius * np.sin(point_heading)
+                center_y = point_y + point_turn_radius * np.cos(point_heading)
+                center_lat, center_lon = xy_to_latlon(center_x, center_y, origin_lat, origin_lon)
+            elif seg_type == 2:  # R_SEG - right turn, center is to the right
+                center_x = point_x + point_turn_radius * np.sin(point_heading)
+                center_y = point_y - point_turn_radius * np.cos(point_heading)
+                center_lat, center_lon = xy_to_latlon(center_x, center_y, origin_lat, origin_lon)
+            else:  # S_SEG - straight, no center
+                center_x = None
+                center_y = None
+                center_lat = None
+                center_lon = None
+            
+            leg_info = {
+                'leg_number': len(legs) + 1,
+                'path_number': path_idx + 1,
+                'segment_type': seg_type,
+                'x_m': point_x,
+                'y_m': point_y,
+                'lat': point_lat,
+                'lon': point_lon,
+                'heading_rad': point_heading,
+                'turn_radius_m': float(point_turn_radius),
+                'center_x_m': float(center_x) if center_x is not None else None,
+                'center_y_m': float(center_y) if center_y is not None else None,
+                'center_lat': float(center_lat) if center_lat is not None else None,
+                'center_lon': float(center_lon) if center_lon is not None else None,
+                'altitude_m': point_altitude,
+                'velocity_ms': point_velocity,
+                'mach': point_mach,
+                'fuel_kg': point_fuel
+            }
+            legs.append(leg_info)
+        
+        # Create output structure
+        output = {
+            'metadata': {
+                'origin_lat': origin_lat,
+                'origin_lon': origin_lon,
+                'total_legs': len(legs)
+            },
+            'legs': legs
+        }
+        
+        # Write to JSON file
+        with open(filename, 'w') as f:
+            json.dump(output, f, indent=2)
+        
+        print(f"\nLeg summary exported to: {filename}")
+        print(f"Total legs: {len(legs)}")
+        
+        return legs
 
 
 class TrajectoryApp:
@@ -2044,6 +2279,8 @@ class TrajectoryApp:
             # Calculate trajectory with loop_mission flag
             self.trajectory = integrator.calculate_trajectory(
                 self.waypoints,
+                 32.0, 
+                 34.0,
                 self.cruise_alt.get(),
                 self.cruise_mach.get(),
                 self.initial_fuel.get(),
