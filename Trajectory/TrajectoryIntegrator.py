@@ -803,7 +803,99 @@ class TrajectoryIntegrator:
         
         return distance
     
-    def calculate_trajectory(self, waypoints, cruise_altitude = 10000, cruise_mach = 0, 
+    def calculate_trajectory_from_json(self, json_file):
+        """
+        Read mission parameters from JSON file and calculate trajectory
+        
+        Parameters:
+        -----------
+        json_file : str
+            Path to JSON file containing mission parameters
+        
+        JSON Format:
+        -----------
+        {
+            "waypoints_latlon": [[lat1, lon1], [lat2, lon2], ...],  # OR
+            "waypoints": [[x1, y1], [x2, y2], ...],  # in meters
+            "origin_lat": 32.0,
+            "origin_lon": 34.0,
+            "cruise_altitude": 10000,
+            "cruise_mach": 0,
+            "initial_fuel": 50,
+            "climb_mode": "optimal",
+            "max_climb_factor": 0.9,
+            "initial_altitude": 0,
+            "initial_mach": 0.2,
+            "loop_mission": false
+        }
+        
+        Returns:
+        --------
+        trajectory : dict with time histories of all states
+        """
+        print(f"Loading mission from: {json_file}")
+        
+        with open(json_file, 'r') as f:
+            config = json.load(f)
+        
+        # Extract origin first (needed for conversion)
+        origin_lat = config.get('origin_lat', 32.0)
+        origin_lon = config.get('origin_lon', 34.0)
+        
+        # Convert lat/lon to x/y helper function
+        def latlon_to_xy(lat, lon, origin_lat, origin_lon):
+            """Convert lat/lon to local X,Y (meters) using equirectangular projection"""
+            R = 6371000.0  # Earth radius in meters
+            y = (lat - origin_lat) * (np.pi / 180.0) * R
+            x = (lon - origin_lon) * (np.pi / 180.0) * R * np.cos(origin_lat * np.pi / 180.0)
+            return x, y
+        
+        # Check if waypoints are in lat/lon or x/y format
+        if 'waypoints_latlon' in config:
+            # Convert from lat/lon to x/y
+            waypoints_latlon = config['waypoints_latlon']
+            waypoints = []
+            for lat, lon in waypoints_latlon:
+                x, y = latlon_to_xy(lat, lon, origin_lat, origin_lon)
+                waypoints.append([x, y])
+            print(f"Converted {len(waypoints)} waypoints from lat/lon to x/y")
+        else:
+            # Use waypoints directly (assumed to be in x/y meters)
+            waypoints = config.get('waypoints', [[0, 0], [10000, 0]])
+        cruise_altitude = config.get('cruise_altitude', 10000)
+        cruise_mach = config.get('cruise_mach', 0)
+        initial_fuel = config.get('initial_fuel', 50)
+        climb_mode = config.get('climb_mode', 'optimal')
+        max_climb_factor = config.get('max_climb_factor', 0.9)
+        initial_altitude = config.get('initial_altitude', 0)
+        initial_mach = config.get('initial_mach', 0.2)
+        loop_mission = config.get('loop_mission', False)
+        
+        print(f"Mission parameters:")
+        print(f"  Waypoints: {len(waypoints)} points")
+        print(f"  Origin: ({origin_lat}, {origin_lon})")
+        print(f"  Cruise: {cruise_altitude}m @ Mach {cruise_mach if cruise_mach > 0 else 'optimal'}")
+        print(f"  Initial fuel: {initial_fuel} kg")
+        print(f"  Loop mission: {loop_mission}")
+        
+        # Call calculate_trajectory with loaded parameters
+        trajectory = self.calculate_trajectory(
+            waypoints=waypoints,
+            origin_lat=origin_lat,
+            origin_lon=origin_lon,
+            cruise_altitude=cruise_altitude,
+            cruise_mach=cruise_mach,
+            initial_fuel=initial_fuel,
+            climb_mode=climb_mode,
+            max_climb_factor=max_climb_factor,
+            initial_altitude=initial_altitude,
+            initial_mach=initial_mach,
+            loop_mission=loop_mission
+        )
+        
+        return trajectory
+    
+    def calculate_trajectory(self, waypoints, origin_lat = 32.0, origin_lon = 34.0, cruise_altitude = 10000, cruise_mach = 0, 
                            initial_fuel = 50,  climb_mode='optimal', max_climb_factor=0.9,
                            initial_altitude=0, initial_mach=0.2, loop_mission=False):
         """
@@ -1336,7 +1428,7 @@ class TrajectoryIntegrator:
         print(f"Total distance: {self._path_length(trajectory['x'], trajectory['y'])/1000:.1f} km")
         print(f"Fuel consumed: {initial_fuel - trajectory['fuel'][-1]:.1f} kg")
         
-        self.export_trajectory_to_json(trajectory, origin_lat=32.0, origin_lon=35.0, filename='trajectory_output.json')
+        self.export_trajectory_to_json(trajectory, origin_lat, origin_lon, filename='trajectory_output.json')
 
         return trajectory
     
