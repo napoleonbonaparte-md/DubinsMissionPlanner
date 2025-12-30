@@ -803,8 +803,8 @@ class TrajectoryIntegrator:
         
         return distance
     
-    def calculate_trajectory(self, waypoints, cruise_altitude, cruise_mach, 
-                           initial_fuel, climb_mode='optimal', max_climb_factor=0.9,
+    def calculate_trajectory(self, waypoints, cruise_altitude = 10000, cruise_mach = 0, 
+                           initial_fuel = 50,  climb_mode='optimal', max_climb_factor=0.9,
                            initial_altitude=0, initial_mach=0.2, loop_mission=False):
         """
         Calculate 3D trajectory through waypoints
@@ -1336,6 +1336,8 @@ class TrajectoryIntegrator:
         print(f"Total distance: {self._path_length(trajectory['x'], trajectory['y'])/1000:.1f} km")
         print(f"Fuel consumed: {initial_fuel - trajectory['fuel'][-1]:.1f} kg")
         
+        self.export_trajectory_to_json(trajectory, origin_lat=32.0, origin_lon=35.0, filename='trajectory_output.json')
+
         return trajectory
     
     def _atmosphere(self, altitude):
@@ -1540,6 +1542,82 @@ class TrajectoryIntegrator:
                 closest_idx = np.argmin(distances_to_wp)
                 wp_velocities.append(velocity[closest_idx])
             print(f"Velocity range: {min(wp_velocities):.1f} - {max(wp_velocities):.1f} m/s")
+    
+    def export_trajectory_to_json(self, trajectory, origin_lat = 32.0, origin_lon = 35.0, filename='trajectory_export.json'):
+        """
+        Export trajectory to JSON format with lat/lon coordinates
+        
+        Parameters:
+        -----------
+        trajectory : dict
+            Trajectory dictionary from calculate_trajectory()
+        origin_lat : float
+            Origin latitude in degrees
+        origin_lon : float
+            Origin longitude in degrees
+        filename : str
+            Output filename for JSON export
+        """
+        # Earth radius in meters
+        R = 6371000.0
+        
+        # Convert local XY to lat/lon
+        def xy_to_latlon(x, y, origin_lat, origin_lon):
+            """Convert local X,Y (meters) to lat/lon using simple equirectangular projection"""
+            lat = origin_lat + (y / R) * (180.0 / np.pi)
+            lon = origin_lon + (x / R) * (180.0 / np.pi) / np.cos(origin_lat * np.pi / 180.0)
+            return lat, lon
+        
+        # Extract trajectory data
+        t = trajectory['t']
+        x = trajectory['x']
+        y = trajectory['y']
+        z = trajectory['z']
+        mach_arr = trajectory['mach']
+        velocity = trajectory['velocity']
+        fuel = trajectory['fuel']
+        heading = trajectory['heading']
+        phase = trajectory['phase']
+        
+        # Build samples array
+        samples = []
+        for i in range(len(t)):
+            lat, lon = xy_to_latlon(x[i], y[i], origin_lat, origin_lon)
+            
+            sample = {
+                'index': i,
+                'time': float(t[i]),
+                'x': float(x[i]),
+                'y': float(y[i]),
+                'lat': float(lat),
+                'lon': float(lon),
+                'altitude': float(z[i]),
+                'velocity': float(velocity[i]),
+                'mach': float(mach_arr[i]),
+                'fuel': float(fuel[i]),
+                'heading': float(heading[i]),
+                'phase': phase[i]
+            }
+            samples.append(sample)
+        
+        # Create output structure
+        output = {
+            'metadata': {
+                'origin_lat': origin_lat,
+                'origin_lon': origin_lon,
+                'total_time': float(t[-1]),
+                'total_samples': len(t)
+            },
+            'samples': samples
+        }
+        
+        # Write to JSON file
+        with open(filename, 'w') as f:
+            json.dump(output, f, indent=2)
+        
+        print(f"\nTrajectory exported to JSON: {filename}")
+        print(f"Total samples: {len(samples)}")
+        print(f"Time span: {t[-1]/60:.1f} minutes")
 
 
 class TrajectoryApp:
